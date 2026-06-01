@@ -72,7 +72,8 @@ In the frontend DB configuration, credentials can be stored in:
 ---
 
 ## Default User Credentials After Frontend Configuration
-- **Admin**: `zabbix`
+- User : **Admin**
+- Pass : **zabbix**
 
 ---
 
