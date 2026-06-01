@@ -18,9 +18,15 @@ Zabbix uses **utf8mb4** encoding instead of **utf8**.
 
 **Reason:**
 - `utf8` uses a maximum of **3 bytes** to encode data. It can represent many Unicode characters, but some symbols (e.g., emojis) may not be supported.
+- `utf8mb4` uses **4 bytes** to encode characters and covers the full set that `utf8` might exclude.
+- Using `utf8mb4` is optional. An admin can use another encoding by setting:
+
+--default-character-set=utf8mb4
+**Reason:**
+- `utf8` uses a maximum of **3 bytes** to encode data. It can represent many Unicode characters, but some symbols (e.g., emojis) may not be supported.
 - `utf8mb4` uses **4 bytes** to encode characters and covers the full set that `utf8` might exclude.  
 - Using `utf8mb4` is optional. An admin can use another encoding by setting:
-```bash
+
 --default-character-set=utf8mb4
 
 ## Default Zabbix Server Configuration Path
