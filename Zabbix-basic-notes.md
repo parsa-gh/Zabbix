@@ -53,6 +53,7 @@ Based on documentation: **Apache is better**. It is known to be faster and often
 - Zabbix server
 - Zabbix DB
 - Zabbix frontend
+- Zabbix Agent(1/2)
 
 ---
 
