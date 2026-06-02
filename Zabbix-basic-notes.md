@@ -124,7 +124,14 @@ Even if you use LDAP, SAML, or similar methods for people to log in to Zabbix, t
 After v5, Zabbix Agent v2 was published.
 
 - v1 was written in C
-- v2 is written in Golang
+- v2 is written in Golang + some C code reused from zabbix agent to :
+  > Reduce the number of TCP connections;
+  
+  > Provide improved concurrency of checks;
+  
+  > Be easily extendable with plugins, which provide simple checks with minimal code and support complex checks consisting of long-running scripts and standalone data gathering with periodic reporting;
+
+  > Function as a replacement for Zabbix agent, supporting all previous features.
 
 ---
 
@@ -266,7 +273,7 @@ Service monitoring monitors the whole infrastructure you mark as a service and c
 ---
 
 ## Simple Check
-Sends ICMP echo requests (ping) to verify if a host is reachable and responsive.
+Sends (For example) ICMP echo requests (ping) to verify if a host is reachable and responsive.
 
 - Connection direction: Zabbix server → monitored host via ICMP
 - Mainly used for: checking whether a device is up or down (host availability monitoring)
@@ -306,6 +313,8 @@ Accepts data pushed directly by external sources or scripts to the Zabbix server
 - Connection direction: external application/script → Zabbix server
 - Port: **10051/TCP**
 - Mainly used for: custom applications to send their own metrics and data directly
+- Key difference with External-Check is that agent runs script itself
+- Server Load : Lower than external check
 
 ---
 
@@ -314,6 +323,8 @@ Executes shell commands or scripts on the Zabbix server to retrieve monitoring d
 
 - Connection depends on the command executed (SSH, HTTP, etc.)
 - Mainly used for: custom scripts or one-off commands to gather specific system information
+- Key difference with Zabbix-trapper is that server runs script on agent
+- Server load : High
 
 ---
 
@@ -325,6 +336,47 @@ Connects to databases (MySQL, PostgreSQL, Oracle, etc.) to execute queries and c
   - **3306** for MySQL
   - **5432** for PostgreSQL
 - Mainly used for: monitoring database performance, query results, and DB-specific metrics
+### Main Approaches :
+- 1. ODBC
+  2. Agentless(External-Checks)
+  3. Agent-Based : Agent does queries in Database
+#### ODBC Data Flow:
+- 4 Logical layer and 3 simplified layers are included.
+  
+- 4 Logical layer :
+  
+  1.ODBC API
+  
+  2.ODBC Driver Manager (unixODBC)
+  
+  3.DB-Specific driver --> `Translates ODBC to DB protocols`
+  
+  4.Actual DB
+- 3 Simplified layers :
+
+  1. ODBC API (Universal Interface)
+  2. Translation layer (Middleware API)
+  3. DB communication (Low-level queries)
+ ##### How it works?
+ ```
+1. Application → ODBC API Call
+                 (SQLConnect, SQLExecute, etc.)
+                 
+2. Driver Manager (unixODBC) → Reads .odbc.ini
+                              → Locates driver
+                              → Loads driver into memory
+                              
+3. Database Driver → Translates ODBC call to DB protocol
+                  → Opens connection to database
+                  → Sends native query/command
+                  
+4. Database → Executes query
+           → Returns result set
+           
+5. Driver → Converts result to ODBC format
+         → Returns to caller
+```
+
 
 ---
 
@@ -339,19 +391,25 @@ Sends HTTP/HTTPS requests to web servers and collects response data or metrics.
 
 ---
 
-## IPMI Agent
+## IPMI(Intelligent Platform Management Interface) Agent
 Communicates with IPMI (Intelligent Platform Management Interface) to monitor hardware sensors and server health.
 
 - Connection direction: Zabbix server → IPMI interface
 - Port: **623/UDP**
 - Mainly used for: physical server monitoring like temperature, voltage, fan status, and power supply health
 
+### How IPMI works?
+- IPMI is a set of computer interface specifications for an autonomous computer subsystem that provides management and monitoring capabilities independently of the operating system
+- The monitored system may be powered off, but must be connected to a power source
+- It has its own IP, but the con is, some devices may not support IPMI
+  <img width="500" height="355" alt="image" src="https://github.com/user-attachments/assets/5a128ecc-6d29-4f0a-8645-28b723a797c1" />
+
 ---
 
 ## SSH Agent
 Executes commands remotely on monitored hosts via SSH.
 
-- Connection direction: Zabbix server → SSH daemon on monitored host
+- Connection direction: Zabbix server → SSH daemon on monitored host → Executes command
 - Port: **22/TCP**
 - Mainly used for: remote Linux/Unix command execution to gather system metrics when the Zabbix agent is not available
 
@@ -360,7 +418,7 @@ Executes commands remotely on monitored hosts via SSH.
 ## Telnet Agent
 Connects to devices via Telnet to execute commands and retrieve output data.
 
-- Connection direction: Zabbix server → Telnet service on monitored device
+- Connection direction: Zabbix server → Telnet service on monitored device → execute commands
 - Port: **23/TCP**
 - Mainly used for: legacy devices and network equipment that only support Telnet for remote management
 
@@ -399,6 +457,8 @@ Executes JavaScript or custom scripts on the Zabbix server to collect or process
 
 ## Browser
 Uses browser automation to interact with web applications and extract data from rendered content.
+
+collect data by executing a user-defined JavaScript code and retrieving data over HTTP/HTTPS. This item can simulate such browser-related actions as clicking, entering text, navigating through web pages, and other user interactions with websites or web applications.
 
 - Connection direction: Zabbix server browser engine → web server
 - Ports: **80/443/TCP** via HTTP/HTTPS
