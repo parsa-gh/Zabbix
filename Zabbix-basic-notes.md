@@ -376,10 +376,90 @@ Connects to databases (MySQL, PostgreSQL, Oracle, etc.) to execute queries and c
 5. Driver → Converts result to ODBC format
          → Returns to caller
 ```
+## Zabbix Database History Tables
 
+### History
+Stores **numeric (float) values** from item collection
+- Contains raw metric data: CPU usage, memory, network throughput, etc.
+- **Huge table** — grows very quickly in large deployments
+- Data structure: timestamp, itemid, value, clock
 
+### History_uint
+Stores **unsigned integer values** from items
+- Examples: packet counts, error counts, connection counts
+- More space-efficient than history for integer-only data
+- Same purpose, different data type optimization
+
+### History_str
+Stores **string/text values** from items
+- Examples: system uptime strings, status messages, file contents
+- Grows slower than numeric tables but can still be large
+- Used for non-numeric monitoring data
+
+### History_log
+Stores **log file entries** collected via log monitoring items
+- Contains extracted log lines from monitored hosts
+- Slower growth than others (depends on log volume)
+- Useful for centralized log aggregation
+
+## Zabbix Database Trends Tables
+
+### Trends
+Stores **aggregated numeric (float) values** from item collection
+- Contains hourly aggregated data: average, min, max, count
+- Reduces storage by summarizing `history` data after retention period
+- Much smaller than `history` table
+- Data structure: itemid, clock, num, value_min, value_avg, value_max
+
+### Trends_uint
+Stores **aggregated unsigned integer values** from items
+- Examples: hourly summaries of packet counts, error counts, connection counts
+- More space-efficient than `trends` for integer-only aggregated data
+- Same purpose as `trends`, different data type optimization
+- Reduces disk space while preserving historical trend analysis capability
 ---
 
+# Zabbix Database Performance Optimization
+
+## Overview
+
+When running Zabbix at scale, the database is the first bottleneck. InnoDB I/O and internal caching layers become critical before CPU or memory issues arise. Database tuning directly determines overall system stability.
+
+## 1. Zabbix Database Structure
+```
+ Note that Zabbix server doesn't write to DB directly, it writes in buffer(Cache) then cache will write it on DB, which may create some bottlenecks due to cache limit.
+```
+Zabbix data is divided into two main table groups:
+
+| Type | Tables | Characteristics |
+|------|--------|-----------------|
+| History | history, history_uint, history_str, history_log | Stores raw metrics per second, heavy random I/O load |
+| Trends | trends, trends_uint | Aggregated hourly averages/max/min values, lighter I/O |
+
+Almost all database load originates from the history tables. The key is how efficiently you manage and periodically clean up these tables.
+
+## 2. Separating History and Trends Storage
+
+Split history and trends data across different disks:
+- Use **SSDs for history tables** — handles constant random writes
+- Use **traditional storage for trends** — lighter I/O requirements
+- This reduces disk contention dramatically
+
+## 3. Partitioned Tables
+
+Partitioned table design prevents the database from stalling when the housekeeper deletes millions of rows.
+
+## 4. Housekeeper Tuning
+
+The Housekeeper deletes old data. In large setups, disable automatic cleanup for most data types and use partitioned tables instead.
+
+**Configuration (Administration → Housekeeping):**
+- Trends → ☐ Disable
+- Events and alerts → ☐ Disable
+- Services → ☐ Disable
+- User sessions → ☑ Keep enabled
+- History → ☐ Disable
+  
 ## HTTP Agent
 Sends HTTP/HTTPS requests to web servers and collects response data or metrics.
 
