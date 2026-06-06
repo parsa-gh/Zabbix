@@ -459,6 +459,47 @@ The Housekeeper deletes old data. In large setups, disable automatic cleanup for
 - Services → ☐ Disable
 - User sessions → ☑ Keep enabled
 - History → ☐ Disable
+
+# Zabbix Housekeeping Configuration Guide
+
+## HousekeepingFrequency
+
+**What it does:**
+- Sets **how often** the housekeeping process runs (measured in hours)
+- Removes outdated/expired data from the database to keep it healthy and performant
+
+**Key points:**
+- **Range:** 0–24 hours
+- **Default:** 1 hour (runs every hour)
+- **Safety limit:** Each cycle deletes a maximum of 4× the frequency window of old data (prevents the server from being overwhelmed by massive deletion jobs)
+- **Special case:** If set to `0`, housekeeping only runs manually (via runtime control), and it deletes 4 hours worth of data minimum, up to 4 days maximum
+
+**Example:**
+- If set to `1`: Runs every hour, deletes up to 4 hours of old data per cycle
+- If set to `6`: Runs every 6 hours, deletes up to 24 hours of old data per cycle
+
+**Conclusion:**
+Use `HousekeepingFrequency` to balance how aggressively you want to clean your database. Lower values (1–2 hours) keep the database lean but run more frequently; higher values (6–12 hours) reduce cleanup overhead but let data accumulate longer. For most deployments, the default of 1 hour is optimal. Increase it only if your server shows signs of housekeeping overhead impacting performance.
+
+---
+
+## MaxHousekeeperDelete
+
+**What it does:**
+- Limits **how many database rows** are deleted in a single housekeeping task/cycle
+- Prevents the server from being slammed by huge deletion operations
+
+**Key points:**
+- **Range:** 0–1,000,000 rows
+- **Default:** 5,000 rows per task
+- **If set to 0:** No limit (⚠️ dangerous — use only if you know what you're doing!)
+
+**Example:**
+- If set to `5000`: Each housekeeping cycle deletes maximum 5,000 rows per table/task
+- If set to `0`: Deletes all old data in one go (risky on large databases)
+
+**Conclusion:**
+`MaxHousekeeperDelete` is your safeguard against database locks and server performance spikes during cleanup. Keep it at the default 5,000 unless you have a small, low-traffic Zabbix instance. Never set it to `0` on production systems unless you've tested extensively—massive delete operations can lock tables and freeze your monitoring temporarily. Adjust upward cautiously if cleanup takes too long; adjust downward if cleanup impacts live queries.
   
 ## HTTP Agent
 Sends HTTP/HTTPS requests to web servers and collects response data or metrics.
