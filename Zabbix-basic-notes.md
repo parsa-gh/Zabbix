@@ -481,6 +481,144 @@ The Housekeeper deletes old data. In large setups, disable automatic cleanup for
 **Conclusion:**
 Use `HousekeepingFrequency` to balance how aggressively you want to clean your database. Lower values (1–2 hours) keep the database lean but run more frequently; higher values (6–12 hours) reduce cleanup overhead but let data accumulate longer. For most deployments, the default of 1 hour is optimal. Increase it only if your server shows signs of housekeeping overhead impacting performance.
 
+# Galera Cluster Plugin Breakdown + Target + Quorum (MariaDB) and PostgreSQL Equivalents + Sync vs Async
+
+## 0) Sync vs Async (Diff) — before everything ⚡
+
+### ✅ Synchronous replication (what “Galera-like” usually is)
+- A transaction is considered **committed only after** the required nodes have received/validated it.
+- Under failures/partitions, progress is controlled by **quorum/majority** rules.
+- Effect: **Strong consistency**, but **higher commit latency** (network + coordination time affects writes).
+
+### ✅ Asynchronous replication
+- A transaction may be **committed locally** and propagated to other nodes **later**.
+- Under failures/partitions, nodes can temporarily diverge.
+- Effect: **Lower write latency**, but **eventual consistency** (or weaker guarantees depending on the design).
+
+---
+
+## 1) MariaDB Galera Cluster — what it is and what it targets 🐬
+
+### Target / Use cases
+- **Active-active (multi-writer)** database clusters
+- OLTP workloads needing **consistency across nodes**
+- Environments where **node-to-node network latency is stable and predictable**
+- Systems designed to accept that **write latency includes replication/coordination cost**
+
+---
+
+## 2) MariaDB Galera Cluster replication model (high-level) 🧠
+
+### Core idea
+- Writes are replicated using **group communication** and a consistent ordering approach.
+- Each node participates in maintaining a **single consistent database state** across the cluster.
+
+### Multi-master behavior
+- Every node can accept writes.
+- To keep consistency, Galera uses **certification/conflict handling**:
+  - Concurrent transactions may conflict (e.g., same row/key updated).
+  - The cluster detects conflicts and may reject transactions that can’t safely be applied together.
+
+---
+
+## 3) Quorum in Galera (mandatory) ✅
+
+### What quorum is protecting against
+- **Split brain**: two sides of a partition both accepting independent writes.
+- Galera prevents progress unless the cluster can confirm it has enough members to remain consistent.
+
+### How quorum affects operation (conceptual)
+- During node failures or network partitions:
+  - If the remaining nodes still form a **majority**, the cluster can keep progressing.
+  - If not, nodes may stop accepting writes / stop cluster service depending on membership state.
+  
+### Practical outcome
+- Under partition:
+  - Only the side that can satisfy **quorum/majority** continues making changes.
+  - The other side is prevented from committing transactions that would diverge from the majority history.
+
+> Exact quorum threshold mechanics depend on Galera implementation/version and config, but the **principle is: progress requires quorum**.
+
+---
+
+## 4) Synchronous vs Asynchronous in MariaDB context (relative explanation)
+
+### Galera (typical behavior)
+- Commit is effectively **synchronous at the cluster level**.
+- Client commits after the cluster’s replication/coordination rules are satisfied.
+
+### Asynchronous replication alternative (general MySQL/MariaDB pattern)
+- Primary commits locally first.
+- Replicas catch up later.
+- During failures, replicas may be behind; “which writes survive” depends on replication lag and failover handling.
+
+---
+
+# 5) PostgreSQL: where “Galera-like” behavior exists vs where it doesn’t 🐘
+
+PostgreSQL commonly uses different patterns than Galera’s synchronous multi-master certification. The main categories are:
+
+## 5.1 PostgreSQL HA with leader election (single-writer)
+### Model
+- One node is the **leader (primary writer)**.
+- Other nodes are **replicas**.
+
+### Sync vs Async in this world
+- Streaming replication can be configured as:
+  - **Synchronous-ish** (depending on settings, replica acknowledgements before commit)
+  - **Asynchronous** (typical default style: commit primary first, then stream)
+  
+### Quorum concept
+- Consensus/leader election systems use **majority/quorum** to avoid split brain.
+- Quorum here is about **electing exactly one leader**, not about multi-master certification of conflicting row updates.
+
+---
+
+## 5.2 PostgreSQL distributed/sharding (Citus-style)
+### Model
+- Data is partitioned across workers (distributed query execution).
+- Scaling is achieved by distribution rather than synchronous shared-state replication.
+
+### Quorum concept
+- Not “Galera quorum” for synchronous multi-master correctness.
+- Coordination might use consensus mechanisms for control-plane decisions, while data placement/replication HA is handled separately.
+
+---
+
+## 5.3 PostgreSQL multi-master / conflict-capable approaches (general reality)
+- PostgreSQL ecosystems can achieve multi-writer behavior via specialized tools/designs, but:
+  - they rarely match Galera’s “cluster-wide synchronous state with certification” model in a drop-in way
+  - guarantees depend on the approach (conflict resolution strategy, replication mode, application constraints)
+
+### Sync vs Async here
+- Many multi-writer approaches tend toward **asynchronous propagation** or require strict conflict handling rules.
+- The key difference from Galera: conflict detection/validation semantics are not universally the same as Galera certification.
+
+---
+
+# 6) Summary of Differences (including quorum + sync/async) ✅
+
+## MariaDB Galera (typical)
+- **Replication:** synchronous cluster coordination
+- **Writes:** multi-master
+- **Consistency:** strong, cluster-wide
+- **Conflict handling:** certification/conflict detection
+- **Quorum:** required to safely continue during failures/partitions (prevents split brain)
+- **Latency:** write commit latency increases due to coordination
+
+## PostgreSQL typical HA (leader + replicas)
+- **Replication:** usually streaming (configurable sync/async semantics)
+- **Writes:** usually single-writer (leader)
+- **Consistency:** strong for leader’s commits; replicas catch up
+- **Quorum:** used for leader election / consensus safety, not Galera-style certification
+- **Latency:** depends on sync vs async replication mode
+
+## PostgreSQL distributed/sharded
+- **Replication:** not “shared state” cluster replication in the Galera sense
+- **Writes:** can be multi-node depending on routing, but not Galera certification semantics
+- **Quorum:** control-plane consensus rather than synchronous multi-master correctness
+- **Latency/Scalability:** optimized for scale, not necessarily strong synchronous cross-node commit
+
 ---
 
 ## MaxHousekeeperDelete
